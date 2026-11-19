@@ -1,6 +1,13 @@
 name: Release
 
+# A tag v* drafts the release: the Linux AppImages (x86_64 and AArch64) and the Windows zip of the start screen and its setup tools,
+# nothing of the game (tools/build/release.py) nor NVIDIA's SM86 spec (the setup builds it: sm86/spec/spec.py).
+# A draft, not a release: it is published (gh release edit vX --draft=false) once the whole setup ran from these very
+# packages on Linux and Windows; v0.1.0 and v0.1.1 went out with a setup nobody had run (#1).
+# workflow_dispatch builds both and keeps them as run artifacts only.
 on:
+  push:
+    tags: ["v*"]
   workflow_dispatch:
 
 permissions:
@@ -11,6 +18,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  # vk_mem_alloc.h 3.4.0 and its sha256 (tools/build/README.md)
   VMA_URL: https://raw.githubusercontent.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/v3.4.0/include/vk_mem_alloc.h
   VMA_SHA256: 8487b7995ad3b263eb73bc5b9a77d71aa69b6bef5d58a715c02d2663afd81f1a
 
@@ -20,22 +28,22 @@ jobs:
     container: archlinux:latest
     steps:
       - name: Tools
-        run: pacman -Syu --noconfirm --needed git ccache ninja cmake binutils uv python
-      - uses: actions/checkout@v5
+        run: pacman -Syu --noconfirm --needed git ccache ninja cmake binutils uv python 7zip
+      - uses: actions/checkout@v7
       - name: ccache in the checkout, kept between runs (build.py compiles through it when installed)
         run: echo "CCACHE_DIR=$PWD/.ccache" >> "$GITHUB_ENV"
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: .ccache
           key: ccache-${{ github.job }}-${{ github.sha }}
           restore-keys: ccache-${{ github.job }}-
       - name: Git trusts the checkout (build.py's version comes from git describe)
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: build/win
           key: windeps-${{ hashFiles('tools/build/windeps.py') }}
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6   # the setup's downloads (checked by sha256) and zig's build of the Windows C runtime
         with:
           path: build/dist/dl
           key: dist-dl-windows-${{ hashFiles('tools/build/dist.py') }}
@@ -43,12 +51,17 @@ jobs:
         run: uv run tools/build/windeps.py
       - name: mkw.exe
         run: uv run tools/build/build.py --target windows --dist --runtime-only
+      - uses: actions/cache@v6
+        with:
+          path: build/dist/dl/llvm-*
+          key: llvm-clang-${{ github.job }}-${{ hashFiles('tools/build/llvm_clang.py') }}
       - name: Setup tools
         run: uv run tools/build/dist.py --target windows
       - name: Zip
         run: uv run tools/build/release.py --target windows --version "${GITHUB_REF_NAME#v}"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: windows
           path: build/release/*.zip
           retention-days: 7
+
