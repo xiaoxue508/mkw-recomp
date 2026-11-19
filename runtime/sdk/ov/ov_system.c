@@ -141,6 +141,8 @@ const char *ov_language(void) {
     const char *code = cfg_get("MKW_LANG");   // no fixed default: MKW_LOCALE or the Windows user locale decides when unset
     if (code && *code && rebuilt_base(code)) return rebuilt_base(code);
     if (code && *code) {
+        if (!strcmp(code, "zh-CN")) return "zh-Hans";
+        if (!strcmp(code, "zh-TW")) return "zh-Hant";
         for (size_t i = 0; i < sizeof codes / sizeof *codes; i++)
             if (!strcmp(code, codes[i])) return codes[i];
         rt_fatal("MKW_LANG '%s' is not a Switch language code", code);
