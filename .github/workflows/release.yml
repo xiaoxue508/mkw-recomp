@@ -1,13 +1,6 @@
 name: Release
 
-# A tag v* drafts the release: the Linux AppImages (x86_64 and AArch64) and the Windows zip of the start screen and its setup tools,
-# nothing of the game (tools/build/release.py) nor NVIDIA's SM86 spec (the setup builds it: sm86/spec/spec.py).
-# A draft, not a release: it is published (gh release edit vX --draft=false) once the whole setup ran from these very
-# packages on Linux and Windows; v0.1.0 and v0.1.1 went out with a setup nobody had run (#1).
-# workflow_dispatch builds both and keeps them as run artifacts only.
 on:
-  push:
-    tags: ["v*"]
   workflow_dispatch:
 
 permissions:
@@ -18,114 +11,31 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  # vk_mem_alloc.h 3.4.0 and its sha256 (tools/build/README.md)
   VMA_URL: https://raw.githubusercontent.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/v3.4.0/include/vk_mem_alloc.h
   VMA_SHA256: 8487b7995ad3b263eb73bc5b9a77d71aa69b6bef5d58a715c02d2663afd81f1a
 
 jobs:
-  linux:
-    runs-on: ubuntu-latest
-    container: archlinux:latest
-    steps:
-      - name: Tools
-        run: pacman -Syu --noconfirm --needed git ccache clang lld llvm ninja make cmake pkgconf expat binutils uv python
-      - uses: actions/checkout@v7
-      - name: ccache in the checkout, kept between runs (build.py compiles through it when installed)
-        run: echo "CCACHE_DIR=$PWD/.ccache" >> "$GITHUB_ENV"
-      - uses: actions/cache@v6
-        with:
-          path: .ccache
-          key: ccache-${{ github.job }}-${{ github.sha }}
-          restore-keys: ccache-${{ github.job }}-
-      - name: Git trusts the checkout (build.py's version comes from git describe)
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      - name: VMA header
-        run: |
-          mkdir -p scratchpad/vma
-          curl -sSfL -o scratchpad/vma/vk_mem_alloc.h "$VMA_URL"
-          echo "$VMA_SHA256  scratchpad/vma/vk_mem_alloc.h" | sha256sum -c -
-      - uses: actions/cache@v6
-        with:
-          path: build/sysroot
-          key: sysroot-${{ hashFiles('tools/build/sysroot.py') }}
-      - name: Steam Runtime sysroot (glibc 2.31)
-        run: uv run tools/build/sysroot.py
-      - name: Runtime and launcher
-        run: uv run tools/build/build.py --dist --runtime-only --sysroot build/sysroot
-      - uses: actions/cache@v6
-        with:
-          path: build/dist/dl/llvm-*
-          key: llvm-clang-${{ github.job }}-${{ hashFiles('tools/build/llvm_clang.py') }}
-      - name: Setup tools
-        run: uv run tools/build/dist.py --target linux
-      - name: AppImage
-        run: uv run tools/build/release.py --target linux --version "${GITHUB_REF_NAME#v}"
-      - uses: actions/upload-artifact@v7
-        with:
-          name: linux
-          path: build/release/*.AppImage
-          retention-days: 7
-
-  linux-aarch64:
-    runs-on: ubuntu-latest
-    container: archlinux:latest
-    steps:
-      - name: Tools
-        run: pacman -Syu --noconfirm --needed git ccache clang lld llvm ninja make cmake pkgconf expat binutils uv python
-      - uses: actions/checkout@v7
-      - name: ccache in the checkout, kept between runs (build.py compiles through it when installed)
-        run: echo "CCACHE_DIR=$PWD/.ccache" >> "$GITHUB_ENV"
-      - uses: actions/cache@v6
-        with:
-          path: .ccache
-          key: ccache-${{ github.job }}-${{ github.sha }}
-          restore-keys: ccache-${{ github.job }}-
-      - name: Git trusts the checkout (build.py's version comes from git describe)
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      - name: VMA header
-        run: |
-          mkdir -p scratchpad/vma
-          curl -sSfL -o scratchpad/vma/vk_mem_alloc.h "$VMA_URL"
-          echo "$VMA_SHA256  scratchpad/vma/vk_mem_alloc.h" | sha256sum -c -
-      - uses: actions/cache@v6
-        with:
-          path: build/sysroot-aarch64
-          key: sysroot-aarch64-${{ hashFiles('tools/build/sysroot.py') }}
-      - name: Debian 11 arm64 sysroot (glibc 2.31)
-        run: uv run tools/build/sysroot.py --arch aarch64
-      - name: Runtime and launcher
-        run: uv run tools/build/build.py --dist --runtime-only --arch aarch64 --sysroot build/sysroot-aarch64
-      - name: Setup tools
-        run: uv run tools/build/dist.py --target linux-aarch64
-      - name: AppImage
-        run: uv run tools/build/release.py --target linux-aarch64 --version "${GITHUB_REF_NAME#v}"
-      - uses: actions/upload-artifact@v7
-        with:
-          name: linux-aarch64
-          path: build/release/*.AppImage
-          retention-days: 7
-
   windows:
     runs-on: ubuntu-latest
     container: archlinux:latest
     steps:
       - name: Tools
-        run: pacman -Syu --noconfirm --needed git ccache ninja cmake binutils uv python 7zip
-      - uses: actions/checkout@v7
+        run: pacman -Syu --noconfirm --needed git ccache ninja cmake binutils uv python
+      - uses: actions/checkout@v5
       - name: ccache in the checkout, kept between runs (build.py compiles through it when installed)
         run: echo "CCACHE_DIR=$PWD/.ccache" >> "$GITHUB_ENV"
-      - uses: actions/cache@v6
+      - uses: actions/cache@v4
         with:
           path: .ccache
           key: ccache-${{ github.job }}-${{ github.sha }}
           restore-keys: ccache-${{ github.job }}-
       - name: Git trusts the checkout (build.py's version comes from git describe)
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      - uses: actions/cache@v6
+      - uses: actions/cache@v4
         with:
           path: build/win
           key: windeps-${{ hashFiles('tools/build/windeps.py') }}
-      - uses: actions/cache@v6   # the setup's downloads (checked by sha256) and zig's build of the Windows C runtime
+      - uses: actions/cache@v4
         with:
           path: build/dist/dl
           key: dist-dl-windows-${{ hashFiles('tools/build/dist.py') }}
@@ -133,49 +43,12 @@ jobs:
         run: uv run tools/build/windeps.py
       - name: mkw.exe
         run: uv run tools/build/build.py --target windows --dist --runtime-only
-      - uses: actions/cache@v6
-        with:
-          path: build/dist/dl/llvm-*
-          key: llvm-clang-${{ github.job }}-${{ hashFiles('tools/build/llvm_clang.py') }}
       - name: Setup tools
         run: uv run tools/build/dist.py --target windows
       - name: Zip
         run: uv run tools/build/release.py --target windows --version "${GITHUB_REF_NAME#v}"
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v4
         with:
           name: windows
           path: build/release/*.zip
           retention-days: 7
-
-  publish:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [linux, linux-aarch64, windows]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      id-token: write  # the provenance below
-      attestations: write
-    steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.3.3
-      - name: Notes (docs/project/release-template.md with the version's section of CHANGELOG.md)
-        run: uv run tools/build/notes.py --version "${GITHUB_REF_NAME#v}" --out notes.md
-      - uses: actions/download-artifact@v8
-        with:
-          path: release
-          merge-multiple: true
-      # an antivirus that flags mkw.exe by its behaviour (#541: one engine of 70) cannot tell our build from another:
-      # with this, `gh attestation verify mkw.exe --repo adriadam10/mkw-recomp` says it came from this workflow
-      - name: mkw.exe out of the zip, attested on its own
-        run: unzip -j release/*-windows-x64.zip mkw-recomp/mkw.exe -d exe
-      - uses: actions/attest-build-provenance@v4
-        with:
-          subject-path: |
-            release/*
-            exe/mkw.exe
-      - name: GitHub release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release create "$GITHUB_REF_NAME" release/* --repo "$GITHUB_REPOSITORY" \
-            --title "$GITHUB_REF_NAME" --notes-file notes.md --draft
